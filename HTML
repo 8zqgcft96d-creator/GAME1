@@ -1,0 +1,37 @@
+const config = {
+    // 原始設定保持不變 (寬 800，高 600)
+    type: Phaser.AUTO,
+    width: 800,
+    height: 600,
+    
+    // ======== 主要修改處：Scale (縮放) 屬性 ========
+    scale: {
+        // 1. 設置縮放模式
+        mode: Phaser.Scale.FIT, 
+        // 2. 讓遊戲畫布置中
+        autoCenter: Phaser.Scale.CENTER_BOTH,
+        // 3. 確保遊戲畫面可以隨視窗大小改變
+        parent: 'phaser-example', // 雖然沒有實際的 div，但設置此項讓 Phaser 接管縮放
+        // 4. 設定遊戲是全螢幕模式
+        // fullScreenTarget: 'phaser-example' // 也可以考慮全螢幕按鈕，此處先不開啟
+    },
+    // ==============================================
+
+    physics: {
+        default: 'arcade',
+        arcade: { gravity: { y: 0 }, debug: false }
+    },
+    scene: { preload: preload, create: create, update: update }
+};
+<style>
+    body { 
+        margin: 0; padding: 0; 
+        background-color: #000; 
+        /* 確保 body 佔滿整個視口 */
+        width: 100%; 
+        height: 100%;
+        
+        display: flex; justify-content: center; align-items: center; 
+        color: white; font-family: Arial, sans-serif;
+    }
+</style>

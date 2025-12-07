@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <title>射擊遊戲：生命與時間挑戰版</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <style>
+        body { 
+            margin: 0; padding: 0; background-color: #000; 
+            display: flex; justify-content: center; align-items: center; height: 100vh;
+            color: white; font-family: Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+
+<script>
+    const config = {
+        type: Phaser.AUTO,
+        width: 800,
+        height: 600,
+        physics: {
+            default: 'arcade',
+            arcade: { gravity: { y: 0 }, debug: false }
+        },
+        scene: { preload: preload, create: create, update: update }
+    };
+
+    const game = new Phaser.Game(config);
+
+    // --- 變數宣告 ---
+    let player;
+    let cursors;
+    let bullets;
+    let enemies;
+    
+    // 遊戲數值
+    let score = 0;
+    let lives = 5;
+    let timeLeft = 60;
+    
+    // 介面文字
+    let scoreText;
+    let livesText;
+    let timeText;
+    let centerText; // 用來顯示 "按 Enter 開始" 或 "遊戲結束"
+    let subText;    // 副標題說明
+    
+    // 狀態控制
+    let isGameRunning = false; 
+    let enemyTimer;
+    let gameClock;
+
+    // --- 1. 載入資源 ---
+    function preload() {
+        this.load.image('sky', 'https://labs.phaser.io/assets/skies/space3.png');
+        this.load.image('player', 'https://labs.phaser.io/assets/sprites/phaser-dude.png');
+        this.load.image('bullet', 'https://labs.phaser.io/assets/sprites/bullets/bullet5.png'); 
+        this.load.image('enemy', 'https://labs.phaser.io/assets/sprites/space-baddie.png');
+    }
+
+    // --- 2. 建立場景 ---
+    function create() {
+        // 背景
+        this.add.image(400, 300, 'sky');
+
+        // UI 文字 (分數、生命、時間)
+        scoreText = this.add.text(16, 16, '分數: 0', { fontSize: '24px', fill: '#FFF' });
+        livesText = this.add.text(350, 16, '生命: 5', { fontSize: '24px', fill: '#00FF00' });
+        timeText  = this.add.text(650, 16, '時間: 60', { fontSize: '24px', fill: '#FFFF00' });
+
+        // 中央提示文字 (開始畫面)
+        centerText = this.add.text(400, 250, '太空射擊挑戰', { fontSize: '48px', fill: '#00FFFF' }).setOrigin(0.5);
+        subText = this.add.text(400, 320, '按 [ENTER] 開始遊戲', { fontSize: '24px', fill: '#FFF' }).setOrigin(0.5);
+
+        // 玩家物件 (先隱藏，開始才顯示)
+        player = this.physics.add.sprite(400, 500, 'player');
+        player.setCollideWorldBounds(true);
+        player.setVisible(false);
+        player.setActive(false);
+
+        // 群組
+        bullets = this.physics.add.group();
+        enemies = this.physics.add.group();
+
+        // 輸入偵測
+        cursors = this.input.keyboard.createCursorKeys();
+        this.input.keyboard.on('keydown-SPACE', fireBullet, this);
+        
+        // 偵測 Enter 鍵來開始/重玩
+        this.input.keyboard.on('keydown-ENTER', () => {
+            if (!isGameRunning) {
+                startGame(this);
+            }
+        });
+
+        // 碰撞偵測
+        this.physics.add.overlap(bullets, enemies, hitEnemy, null, this);
+        this.physics.add.overlap(player, enemies, hitPlayer, null, this);
+    }
+
+    // --- 3. 遊戲邏輯 ---
+    function update() {
+        if (!isGameRunning) return; // 如果遊戲沒開始，就不執行移動邏輯
+
+        // 玩家移動
+        if (cursors.left.isDown) {
+            player.setVelocityX(-300);
+        } else if (cursors.right.isDown) {
+            player.setVelocityX(300);
+        } else {
+            player.setVelocityX(0);
+        }
+
+        // 清理子彈
+        bullets.children.each(function(b) {
+            if (b.active && b.y < -10) b.destroy();
+        });
+
+        // 敵人移動
+        enemies.children.each(function(e) {
+            if (e.active) {
+                e.y += 3;
+                if (e.y > 620) e.destroy();
+            }
+        });
+    }
+
+    // --- 自定義函式 ---
+
+    function startGame(scene) {
+        // 重置數值
+        score = 0;
+        lives = 5;
+        timeLeft = 60;
+        isGameRunning = true;
+
+        // 更新 UI
+        scoreText.setText('分數: ' + score);
+        livesText.setText('生命: ' + lives);
+        timeText.setText('時間: ' + timeLeft);
+        
+        // 隱藏標題，顯示玩家
+        centerText.setVisible(false);
+        subText.setVisible(false);
+        player.setVisible(true);
+        player.setActive(true);
+        player.setPosition(400, 500);
+        player.clearTint(); // 清除之前的紅色受傷效果
+
+        // 清空場上剩餘的敵人
+        enemies.clear(true, true);
+
+        // 啟動敵人生成器 (每 0.8 秒一隻)
+        enemyTimer = scene.time.addEvent({
+            delay: 800,
+            callback: spawnEnemy,
+            callbackScope: scene,
+            loop: true
+        });
+
+        // 啟動倒數計時器 (每 1 秒扣一次)
+        gameClock = scene.time.addEvent({
+            delay: 1000,
+            callback: onSecondPassed,
+            callbackScope: scene,
+            loop: true
+        });
+    }
+
+    function spawnEnemy() {
+        if (!isGameRunning) return;
+        const x = Phaser.Math.Between(50, 750);
+        const enemy = enemies.create(x, -50, 'enemy');
+        enemy.setVelocityY(150);
+    }
+
+    function fireBullet() {
+        if (!isGameRunning || !player.active) return;
+        let bullet = bullets.create(player.x, player.y - 20, 'bullet');
+        if (bullet) {
+            bullet.setVelocityY(-400);
+        }
+    }
+
+    function hitEnemy(bullet, enemy) {
+        bullet.destroy();
+        enemy.destroy();
+        score += 10;
+        scoreText.setText('分數: ' + score);
+    }
+
+    function hitPlayer(player, enemy) {
+        enemy.destroy(); // 敵人消失
+        
+        // 扣血邏輯
+        lives--;
+        livesText.setText('生命: ' + lives);
+        
+        // 視覺回饋：相機震動 + 玩家變紅
+        this.cameras.main.shake(200, 0.01);
+        player.setTint(0xff0000);
+        this.time.delayedCall(200, () => player.clearTint()); // 0.2秒後恢復顏色
+
+        // 檢查是否死亡
+        if (lives <= 0) {
+            endGame(this, false); // false 代表輸了
+        }
+    }
+
+    function onSecondPassed() {
+        timeLeft--;
+        timeText.setText('時間: ' + timeLeft);
+
+        // 時間到，判定勝利
+        if (timeLeft <= 0) {
+            endGame(this, true); // true 代表贏了
+        }
+    }
+
+    function endGame(scene, isWin) {
+        isGameRunning = false;
+        player.setActive(false);
+        player.setVelocity(0);
+
+        // 停止計時器
+        if (enemyTimer) enemyTimer.remove();
+        if (gameClock) gameClock.remove();
+
+        // 顯示結算畫面
+        centerText.setVisible(true);
+        subText.setVisible(true);
+
+        if (isWin) {
+            centerText.setText('任務完成！');
+            centerText.setColor('#00FF00'); // 綠色
+        } else {
+            centerText.setText('遊戲結束');
+            centerText.setColor('#FF0000'); // 紅色
+        }
+        subText.setText('最終分數: ' + score + '\n按 [ENTER] 再玩一次');
+    }
+</script>
+
+</body>
+</html>
